@@ -220,3 +220,69 @@ Six fields, always in this order: `Minutes  Hours  Day-of-month  Month  Day-of-w
 
 ### Reflection
 - Tomorrow's focus: Day 6 — VPC + EC2 setup, Flask deployed on EC2
+
+## Day 6 — 25-06-2026
+
+**Status:** ✅ Cloud/Git
+
+### Cloud/Git — VPC + EC2 Setup
+
+#### What I Built
+1. Created `cloudvault-vpc` (10.0.0.0/16) using the "VPC and more" wizard:
+   - 2 Availability Zones, 2 public subnets, 2 private subnets
+   - **NAT Gateway: explicitly set to "None"** — avoided a real cost trap (NAT Gateways 
+     run ~$30-45/month even idle, and aren't Free Tier eligible)
+   - Kept the default S3 Gateway VPC endpoint (free, allows private subnet → S3 access later)
+2. Learned every AWS account also has a separate **Default VPC** (172.31.0.0/16) in each 
+   region, auto-created on account setup — confirmed my EC2 instance launched into my 
+   own `cloudvault-vpc`, not the default one (best practice: don't deploy into the default VPC)
+3. Launched EC2 instance `cloudvault-web`:
+   - AMI: Amazon Linux 2023 (not Amazon Linux 2 — that's about to hit end-of-life)
+   - Instance type: **t3.micro** (corrected from the original plan's t2.micro — my account, 
+     created after July 2025, is on the newer credit-based Free Tier model where t3.micro 
+     is directly eligible, not just a t2.micro fallback)
+   - Public subnet, auto-assign public IP enabled
+   - Security group: SSH (22) restricted to My IP only, custom TCP 5000 also restricted to My IP
+   - Created and downloaded key pair `cloudvault-key.pem`
+4. Locked down key file permissions on Windows (required before SSH will trust the key):
+```powershell
+   icacls "C:\Users\sarat\.ssh\cloudvault-key.pem" /inheritance:r
+   icacls "C:\Users\sarat\.ssh\cloudvault-key.pem" /grant:r "$($env:USERNAME):(R)"
+```
+5. SSH'd into the instance from PowerShell:
+```powershell
+   ssh -i "C:\Users\sarat\.ssh\cloudvault-key.pem" ec2-user@<public-ip>
+```
+6. Installed Flask on the EC2 instance itself (ran once prompt changed to `[ec2-user@...]$`):
+```bash
+   sudo dnf update -y
+   sudo dnf install -y python3-pip
+   pip3 install flask boto3 python-dotenv --user
+```
+7. Created GitHub Actions workflow skeleton at `.github/workflows/ci.yml` (placeholder — 
+   full pipeline build comes Day 7/13)
+8. Documented setup in `docs/vpc-ec2-setup.md`, committed:
+```powershell
+   git add .github\workflows\ci.yml docs\vpc-ec2-setup.md
+   git commit -m "infra: add VPC and EC2 setup notes"
+   git push origin main
+```
+9. **Stopped the EC2 instance** (Instance state → Stop) to avoid leaving it billing overnight
+
+#### Key Takeaways
+- `icacls /inheritance:r` strips inherited folder permissions; `/grant:r "$env:USERNAME:(R)"` 
+  then grants read-only access to just my own Windows account — this combo is what makes 
+  SSH trust a `.pem` file on Windows
+- Once SSH'd in, the terminal prompt itself changes (`PS C:\Users\sarat>` → 
+  `[ec2-user@ip-...]$`) — that prompt change is the signal you're now issuing commands 
+  on the remote EC2 instance, not locally
+- AWS Free Tier eligibility depends on **account creation date** — pre-July 2025 accounts 
+  get t2.micro/t3.micro for 12 months; post-July 2025 accounts (mine) get a broader set 
+  of instance types under a credit-based Free/Paid Plan model. Always trust the console's 
+  "Free tier eligible" tag over older tutorials/PDFs.
+- A stopped EC2 instance stops compute billing, but the attached EBS volume keeps 
+  billing separately (within Free Tier's 30GB allowance, so not a concern yet — but 
+  worth remembering for later)
+
+### Reflection
+- Tomorrow's focus: Day 7 — BST + Review Day (System Design Week 1 review, GitHub Actions CI completion)
