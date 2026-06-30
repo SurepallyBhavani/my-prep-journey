@@ -286,3 +286,37 @@ Six fields, always in this order: `Minutes  Hours  Day-of-month  Month  Day-of-w
 
 ### Reflection
 - Tomorrow's focus: Day 7 — BST + Review Day (System Design Week 1 review, GitHub Actions CI completion)
+
+## Day 8 — [Date]
+
+**Status:** ✅ Cloud/Git
+
+### Cloud/Git — RDS PostgreSQL Integration
+- Identified true private subnets via route table inspection (not MapPublicIpOnLaunch, 
+  unreliable since Day 6's manual IGW fix), used 1 private + 1 public subnet across 2 AZs 
+  for the DB subnet group — RDS still fully isolated via "Public access: No" + security 
+  group locked to only the EC2 SG
+- Confirmed account is on the new credit-based Free Plan ($140 credit, 182 days) — no 
+  "Free tier eligible" tag shown for RDS instance classes under this model; selected 
+  db.t4g.micro manually
+- Manually selected gp2 storage (gp3 isn't covered the same way)
+- Created `file_uploads` table (id, filename, s3_key, upload_time, expiry_time), connected 
+  via SSH tunnel through EC2 as a bastion host (RDS has no public access)
+- Updated `app.py` so `/upload` logs metadata to RDS after each successful S3 upload
+- Verified end-to-end with `check_db.py` — confirmed row insertion after a real upload
+
+### Mistakes made / fixed (longest debugging chain so far)
+1. RDS console renamed creation flow: "Express configuration" / "Full configuration" / 
+   "Restore from S3" — picked Full configuration for manual control over storage type 
+   and instance class
+2. PostgreSQL 15+ on RDS sets `rds.force_ssl=1` by default — connections without SSL are 
+   rejected. Fixed by adding `sslmode='require'` to every psycopg2.connect() call
+3. **Root cause of a multi-hour "password authentication failed" chase:** the actual 
+   RDS master username was `postgres`, not `cloudvault_admin` as assumed — likely the 
+   username field reverted to default during creation and went unnoticed. PostgreSQL 
+   deliberately returns the same generic "password authentication failed" error whether 
+   the username or password is wrong (security best practice — doesn't leak which part 
+   failed), which is why repeated password resets never fixed it
+4. Diagnosed systematically rather than guessing further: tested via psql directly on 
+   EC2 (ruling out local Windows/.env issues), confirmed PendingModifiedValues was empty 
+   (ruling out a stuck password change), then queried AWS directly for the real username:
